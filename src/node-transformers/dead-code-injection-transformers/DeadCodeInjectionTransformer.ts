@@ -270,27 +270,39 @@ export class DeadCodeInjectionTransformer extends AbstractNodeTransformer {
      * @param {NodeGuards} parentNode
      */
     public prepareNode (programNode: ESTree.Node, parentNode: ESTree.Node): void {
+        const collectibleBlockStatementNodes: ESTree.BlockStatement[] = [];
+        let totalBlockStatements: number = 0;
+
+        // Find all the collectible block statement nodes in the program.
         estraverse.traverse(programNode, {
             enter: (node: ESTree.Node): void => {
-                if (!NodeGuards.isBlockStatementNode(node)) {
-                    return;
+                if (NodeGuards.isBlockStatementNode(node)) {
+                    totalBlockStatements++;
+                    if (DeadCodeInjectionTransformer.isValidCollectedBlockStatementNode(node)) {
+                        collectibleBlockStatementNodes.push(node);
+                    }
                 }
-
-                const clonedBlockStatementNode: ESTree.BlockStatement = NodeUtils.clone(node);
-
-                if (!DeadCodeInjectionTransformer.isValidCollectedBlockStatementNode(clonedBlockStatementNode)) {
-                    return;
-                }
-
-                /**
-                 * We should transform identifiers in the dead code block statement to avoid conflicts with original code
-                 */
-                const transformedBlockStatementNode: ESTree.BlockStatement =
-                    this.makeClonedBlockStatementNodeUnique(clonedBlockStatementNode);
-
-                this.collectedBlockStatements.push(transformedBlockStatementNode);
             }
         });
+
+        // How many block statements do we need to collect based on the `deadCodeInjectionThreshold`.
+        const requiredBlockStatements = Math.ceil(this.options.deadCodeInjectionThreshold * totalBlockStatements);
+
+        for (const blockStatementNode of collectibleBlockStatementNodes) {
+            if (this.collectedBlockStatements.length >= requiredBlockStatements) {
+                break;
+            }
+
+            const clonedBlockStatementNode: ESTree.BlockStatement = NodeUtils.clone(blockStatementNode);
+
+            /**
+             * We should transform identifiers in the dead code block statement to avoid conflicts with original code
+             */
+            const transformedBlockStatementNode: ESTree.BlockStatement =
+                this.makeClonedBlockStatementNodeUnique(clonedBlockStatementNode);
+
+            this.collectedBlockStatements.push(transformedBlockStatementNode);
+        }
 
         this.collectedBlockStatementsTotalLength = this.collectedBlockStatements.length;
     }
